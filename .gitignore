@@ -1,0 +1,21 @@
+# STM32 ビルド成果物
+test_STM_v1/Debug/
+test_STM_v1/Release/
+**/*.o
+**/*.d
+**/*.elf
+**/*.map
+**/*.list
+**/*.bin
+**/*.hex
+
+# CubeIDE ワークスペース
+.metadata/
+RemoteSystemsTempFiles/
+
+# Playwright / Node
+node_modules/
+package-lock.json
+package.json
+capture_demo.js
+screenshots/

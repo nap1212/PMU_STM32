@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>PMU Dashboard — STM32F446RE</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#0d1117;color:#c9d1d9;font-family:'Segoe UI',sans-serif;font-size:13px}
+  h1{font-size:16px;font-weight:600;color:#58a6ff}
+  h2{font-size:12px;font-weight:600;color:#8b949e;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}
+
+  /* ── Header ── */
+  #header{display:flex;align-items:center;gap:12px;padding:10px 16px;background:#161b22;border-bottom:1px solid #30363d}
+  #header h1{flex:1}
+  #ts{font-size:11px;color:#8b949e;font-variant-numeric:tabular-nums}
+  button{padding:5px 14px;border:1px solid #30363d;border-radius:6px;background:#21262d;color:#c9d1d9;cursor:pointer;font-size:12px}
+  button:hover{background:#30363d}
+  button.active{background:#1f6feb;border-color:#388bfd;color:#fff}
+  select{padding:4px 8px;border:1px solid #30363d;border-radius:6px;background:#21262d;color:#c9d1d9;font-size:12px}
+  #dot{width:8px;height:8px;border-radius:50%;background:#da3633;display:inline-block;margin-right:4px}
+  #dot.on{background:#3fb950}
+
+  /* ── Layout ── */
+  #main{display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:auto auto auto auto;gap:10px;padding:10px}
+  .card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px}
+  .span2{grid-column:span 2}
+  .span3{grid-column:span 3}
+
+  /* ── KPI ── */
+  #kpi{display:grid;grid-template-columns:repeat(8,1fr);gap:8px}
+  .kpi{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:10px 12px;text-align:center}
+  .kpi .label{font-size:10px;color:#8b949e;margin-bottom:4px}
+  .kpi .val{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;color:#58a6ff}
+  .kpi .unit{font-size:10px;color:#8b949e;margin-left:2px}
+  .kpi.warn .val{color:#d29922}
+  .kpi.ng .val{color:#da3633}
+  .kpi.ok .val{color:#3fb950}
+
+  /* ── Charts ── */
+  .chart-wrap{position:relative;height:180px}
+
+  /* ── Phasor canvas ── */
+  #phasorCanvas{display:block;margin:0 auto}
+
+  /* ── Table ── */
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th{background:#21262d;color:#8b949e;padding:4px 8px;text-align:left;font-weight:500}
+  td{padding:4px 8px;border-top:1px solid #21262d;font-variant-numeric:tabular-nums}
+  tr:hover td{background:#21262d}
+  .tag{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600}
+  .tag.ls{background:#1f3a5f;color:#58a6ff}
+  .tag.dft{background:#3d1f5f;color:#bc8cff}
+
+  /* ── Log ── */
+  #log{height:160px;overflow-y:auto;font-size:11px;font-family:monospace;line-height:1.5}
+  #log .entry{padding:2px 0;border-bottom:1px solid #21262d;display:flex;gap:8px}
+  #log .entry .t{color:#3fb950;flex-shrink:0}
+  #log .entry .m{color:#c9d1d9;word-break:break-all}
+  #log .entry.warn .m{color:#d29922}
+  #log .entry.err .m{color:#da3633}
+
+  /* ── Algorithm selector ── */
+  #algoPanel{display:flex;gap:8px;margin-bottom:10px;align-items:center}
+  .algo-btn{padding:3px 10px;border-radius:12px;font-size:11px}
+  .algo-btn.sel{background:#1f3a5f;border-color:#388bfd;color:#58a6ff}
+
+  /* ── Device panel ── */
+  #devPanel{background:#161b22;border-bottom:1px solid #30363d;padding:8px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  #devPanel .dp-label{font-size:11px;color:#8b949e;flex-shrink:0}
+  #devList{display:flex;gap:6px;flex-wrap:wrap;flex:1}
+  .dev-item{display:flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid #30363d;border-radius:6px;background:#21262d;cursor:pointer;transition:border-color .15s}
+  .dev-item:hover{border-color:#388bfd}
+  .dev-item.connected{border-color:#3fb950;background:#0d2b1a}
+  .dev-item.connected .dev-dot{background:#3fb950}
+  .dev-item .dev-dot{width:7px;height:7px;border-radius:50%;background:#484f58;flex-shrink:0}
+  .dev-item .dev-name{font-size:12px;font-weight:600;color:#c9d1d9}
+  .dev-item .dev-sub{font-size:10px;color:#8b949e}
+  .dev-item .dev-btn{margin-left:4px;padding:2px 8px;font-size:11px;border-radius:4px}
+  .dev-item.connected .dev-btn{background:#da3633;border-color:#f85149;color:#fff}
+  #noDevice{font-size:11px;color:#484f58;padding:4px 0}
+</style>
+</head>
+<body>
+
+<!-- ═══ HEADER ═══ -->
+<div id="header">
+  <h1>PMU Synchrophasor Dashboard</h1>
+  <span id="ts">--:--:--.---</span>
+  <button id="btnClear">クリア</button>
+  <button id="btnCsv">CSV保存</button>
+</div>
+
+<!-- ═══ DEVICE PANEL ═══ -->
+<div id="devPanel">
+  <span class="dp-label">シリアルデバイス</span>
+  <div id="devList"><span id="noDevice">デバイスなし</span></div>
+  <select id="baudSel">
+    <option value="115200" selected>115200 bps</option>
+    <option value="9600">9600 bps</option>
+    <option value="38400">38400 bps</option>
+    <option value="57600">57600 bps</option>
+  </select>
+  <button id="btnScan">＋ デバイスを追加</button>
+</div>
+
+<!-- ═══ KPI ═══ -->
+<div id="kpi" style="padding:10px 10px 0">
+  <div class="kpi" id="kFreq"><div class="label">周波数</div><div class="val" id="vFreq">--</div><span class="unit">Hz</span></div>
+  <div class="kpi" id="kAmpLS"><div class="label">振幅 LS (実効値)</div><div class="val" id="vAmpLS">--</div><span class="unit">V</span></div>
+  <div class="kpi" id="kAmpDFT"><div class="label">振幅 DFT (実効値)</div><div class="val" id="vAmpDFT">--</div><span class="unit">V</span></div>
+  <div class="kpi" id="kPhase"><div class="label">相対位相 LS</div><div class="val" id="vPhase">--</div><span class="unit">deg</span></div>
+  <div class="kpi" id="kAbsPhase"><div class="label">絶対位相 LS</div><div class="val" id="vAbsPhase">--</div><span class="unit">deg</span></div>
+  <div class="kpi" id="kTVE"><div class="label">TVE</div><div class="val" id="vTVE">--</div><span class="unit">%</span></div>
+  <div class="kpi" id="kROCOF"><div class="label">ROCOF</div><div class="val" id="vROCOF">--</div><span class="unit">Hz/s</span></div>
+  <div class="kpi" id="kGPS"><div class="label">GPS UTC</div><div class="val" style="font-size:16px" id="vGPS">--:--:--</div><div id="vGPSStatus" style="font-size:10px;color:#484f58">NO FIX</div></div>
+</div>
+
+<!-- ═══ MAIN GRID ═══ -->
+<div id="main">
+
+  <!-- 波形チャート -->
+  <div class="card span2">
+    <h2>波形 (リアルタイム)</h2>
+    <div class="chart-wrap"><canvas id="chartWave"></canvas></div>
+  </div>
+
+  <!-- フェーザー図 -->
+  <div class="card">
+    <h2>フェーザー図</h2>
+    <canvas id="phasorCanvas" width="200" height="200"></canvas>
+  </div>
+
+  <!-- 周波数トレンド -->
+  <div class="card">
+    <h2>周波数トレンド</h2>
+    <div class="chart-wrap"><canvas id="chartFreq"></canvas></div>
+  </div>
+
+  <!-- TVEトレンド -->
+  <div class="card">
+    <h2>TVE トレンド</h2>
+    <div class="chart-wrap"><canvas id="chartTVE"></canvas></div>
+  </div>
+
+  <!-- THD / ROCOF -->
+  <div class="card">
+    <h2>THD / ROCOF トレンド</h2>
+    <div class="chart-wrap"><canvas id="chartROCOF"></canvas></div>
+  </div>
+
+  <!-- アルゴリズム比較テーブル -->
+  <div class="card span2">
+    <h2>アルゴリズム比較履歴</h2>
+    <div style="overflow:auto;max-height:160px">
+    <table>
+      <thead><tr>
+        <th>タイムスタンプ</th>
+        <th>アルゴリズム</th>
+        <th>振幅(pk) V</th>
+        <th>振幅(rms) V</th>
+        <th>位相 deg</th>
+        <th>周波数 Hz</th>
+        <th>TVE %</th>
+        <th>THD %</th>
+      </tr></thead>
+      <tbody id="tblBody"></tbody>
+    </table>
+    </div>
+  </div>
+
+  <!-- ログ -->
+  <div class="card">
+    <h2>タイムスタンプ ログ</h2>
+    <div id="log"></div>
+  </div>
+
+</div><!-- /main -->
+
+<script>
+// ════════════════════════════════════════════════
+//  Chart.js 初期化
+// ════════════════════════════════════════════════
+const GRID  = {color:'#21262d'};
+const FONT  = {color:'#8b949e',size:10};
+const MAX_WAVE = 200;
+const MAX_TREND = 60;
+
+function mkLine(canvas, labels, datasets, yLabel=''){
+  return new Chart(canvas, {
+    type:'line',
+    data:{labels, datasets},
+    options:{
+      animation:false, responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{labels:{color:'#8b949e',font:{size:10},boxWidth:12}}},
+      scales:{
+        x:{ticks:{...FONT, maxTicksLimit:8}, grid:GRID},
+        y:{ticks:{...FONT}, grid:GRID, title:{display:!!yLabel,text:yLabel,color:'#8b949e',font:{size:10}}}
+      }
+    }
+  });
+}
+
+// 波形チャート
+const waveLabels = Array.from({length:MAX_WAVE},(_,i)=>i);
+const chartWave = mkLine(
+  document.getElementById('chartWave'), waveLabels,
+  [
+    {label:'AC (実測)',  data:[], borderColor:'#58a6ff', borderWidth:1, pointRadius:0, tension:0},
+    {label:'LS 推定',   data:[], borderColor:'#3fb950', borderWidth:1, pointRadius:0, tension:0},
+    {label:'DFT 推定',  data:[], borderColor:'#bc8cff', borderWidth:1, pointRadius:0, tension:0},
+  ]
+);
+
+// 周波数トレンド
+const freqLabels=[], freqData=[];
+const chartFreq = mkLine(
+  document.getElementById('chartFreq'), freqLabels,
+  [{label:'周波数', data:freqData, borderColor:'#58a6ff', borderWidth:1.5, pointRadius:2, tension:0.3}], 'Hz'
+);
+// 基準線 50Hz
+chartFreq.options.plugins.annotation = {};  // annotation plugin 不要のため参考線はデータで代替
+
+// TVEトレンド
+const tveLabels=[], tveData=[];
+const chartTVE = mkLine(
+  document.getElementById('chartTVE'), tveLabels,
+  [{label:'TVE', data:tveData, borderColor:'#d29922', borderWidth:1.5, pointRadius:2, tension:0.3}], '%'
+);
+
+// THD/ROCOF
+const rocofLabels=[], thdData=[], rocofData=[];
+const chartROCOF = mkLine(
+  document.getElementById('chartROCOF'), rocofLabels,
+  [
+    {label:'THD %',    data:thdData,   borderColor:'#f78166', borderWidth:1.5, pointRadius:2, tension:0.3, yAxisID:'y'},
+    {label:'ROCOF Hz/s', data:rocofData, borderColor:'#79c0ff', borderWidth:1.5, pointRadius:2, tension:0.3, yAxisID:'y1'},
+  ]
+);
+chartROCOF.options.scales.y1 = {position:'right', ticks:FONT, grid:{drawOnChartArea:false}};
+
+// ════════════════════════════════════════════════
+//  フェーザー図
+// ════════════════════════════════════════════════
+const pCanvas = document.getElementById('phasorCanvas');
+const pCtx    = pCanvas.getContext('2d');
+
+function drawPhasor(ampLS, phLS, ampDFT, phDFT){
+  const W=pCanvas.width, H=pCanvas.height, cx=W/2, cy=H/2;
+  const maxAmp = Math.max(ampLS, ampDFT, 1);
+  const scale  = (W/2 - 20) / maxAmp;
+
+  pCtx.clearRect(0,0,W,H);
+
+  // 背景
+  pCtx.fillStyle='#161b22'; pCtx.fillRect(0,0,W,H);
+
+  // 格子・円
+  pCtx.strokeStyle='#21262d'; pCtx.lineWidth=1;
+  [0.25,0.5,0.75,1].forEach(r=>{
+    pCtx.beginPath(); pCtx.arc(cx,cy,r*(W/2-20),0,Math.PI*2); pCtx.stroke();
+  });
+  pCtx.beginPath(); pCtx.moveTo(20,cy); pCtx.lineTo(W-20,cy); pCtx.stroke();
+  pCtx.beginPath(); pCtx.moveTo(cx,20); pCtx.lineTo(cx,H-20); pCtx.stroke();
+
+  function arrow(amp, phDeg, color, label){
+    const rad = phDeg * Math.PI / 180;
+    const ex = cx + amp * scale * Math.cos(rad);
+    const ey = cy - amp * scale * Math.sin(rad);
+    pCtx.strokeStyle=color; pCtx.lineWidth=2;
+    pCtx.beginPath(); pCtx.moveTo(cx,cy); pCtx.lineTo(ex,ey); pCtx.stroke();
+    // arrowhead
+    const angle = Math.atan2(cy-ey, ex-cx);
+    pCtx.beginPath();
+    pCtx.moveTo(ex,ey);
+    pCtx.lineTo(ex-8*Math.cos(angle-0.4), ey+8*Math.sin(angle-0.4));
+    pCtx.lineTo(ex-8*Math.cos(angle+0.4), ey+8*Math.sin(angle+0.4));
+    pCtx.closePath(); pCtx.fillStyle=color; pCtx.fill();
+    // label
+    pCtx.fillStyle=color; pCtx.font='10px Segoe UI';
+    pCtx.fillText(label, ex+4, ey-4);
+  }
+
+  if(ampLS>0)  arrow(ampLS,  phLS,  '#3fb950','LS');
+  if(ampDFT>0) arrow(ampDFT, phDFT, '#bc8cff','DFT');
+
+  // 凡例
+  pCtx.fillStyle='#8b949e'; pCtx.font='9px Segoe UI';
+  pCtx.fillText(`LS : ${ampLS.toFixed(1)}V  ${phLS.toFixed(1)}°`, 4, H-18);
+  pCtx.fillText(`DFT: ${ampDFT.toFixed(1)}V  ${phDFT.toFixed(1)}°`, 4, H-6);
+}
+drawPhasor(0,0,0,0);
+
+// ════════════════════════════════════════════════
+//  状態・データ
+// ════════════════════════════════════════════════
+const waveAC=[], waveLS=[], waveDFT=[];
+const csvRows=[['timestamp','utc','gps_lock','algo','amp_pk','amp_rms','phase','abs_phase','freq','tve','thd']];
+
+let state = {
+  freq:0, rocof:0,
+  ampLS:0, ampDFT:0,
+  phLS:0,  phDFT:0,
+  absPhLS:null, absPhaseDFT:null,
+  tve:0,   thd:0,
+  dcOff:0, rms:0,
+  gpsUtc:'--:--:--', gpsLock:false, gpsPPS:false,
+};
+
+// ── タイムスタンプ ──
+function nowStr(){
+  const d=new Date();
+  return d.toLocaleTimeString('ja-JP',{hour12:false})+'.'+String(d.getMilliseconds()).padStart(3,'0');
+}
+function nowISO(){ return new Date().toISOString(); }
+
+// ── 時計 ──
+setInterval(()=>{ document.getElementById('ts').textContent = nowStr(); }, 100);
+
+// ════════════════════════════════════════════════
+//  シリアル受信・パース
+// ════════════════════════════════════════════════
+let lineBuffer = '';
+
+function parseLine(line){
+  line = line.trim();
+  if(!line) return;
+
+  // 波形データ: AC:x,LS_est:x,DFT_est:x
+  if(line.startsWith('AC:')){
+    const m = line.match(/AC:([-\d.]+),LS_est:([-\d.]+),DFT_est:([-\d.]+)/);
+    if(m){
+      waveAC.push(+m[1]); waveLS.push(+m[2]); waveDFT.push(+m[3]);
+      if(waveAC.length > MAX_WAVE){ waveAC.shift(); waveLS.shift(); waveDFT.shift(); }
+    }
+    return;
+  }
+
+  // フェーザー情報行: Amp_LS:x,...
+  if(line.startsWith('Amp_LS:')){
+    const m = line.match(/Amp_LS:([\d.]+),Amp_DFT:([\d.]+),Phase_LS:([-\d.]+),Phase_DFT:([-\d.]+),Freq:([\d.]+),TVE:([\d.]+)(?:,AbsPhase_LS:([-\d.]+),AbsPhase_DFT:([-\d.]+),UTC:(\d{2}:\d{2}:\d{2}),GPS_LOCK:(\d))?/);
+    if(m){
+      state.ampLS=+m[1]; state.ampDFT=+m[2];
+      state.phLS=+m[3];  state.phDFT=+m[4];
+      state.freq=+m[5];  state.tve=+m[6];
+      if(m[7] !== undefined){ state.absPhLS=+m[7]; state.absPhaseDFT=+m[8]; }
+      if(m[9])  state.gpsUtc = m[9];
+      if(m[10]) state.gpsLock = m[10]==='1';
+      commitMeasurement();
+    }
+    return;
+  }
+
+  // 詳細テキストブロックをパース
+  const pairs = [
+    [/Frequency\s*:\s*([\d.]+)/,           v=>{ state.freq=+v }],
+    [/ROCOF\s*:\s*([-\d.]+)/,              v=>{ state.rocof=+v }],
+    [/Amp \(real\)\s*:\s*([\d.]+)/,        v=>{ if(!state._gotLS){ state.ampLS=+v; state._gotLS=true; } else { state.ampDFT=+v; } }],
+    [/Phase\s*:\s*([-\d.]+) deg/,          v=>{ if(!state._gotPh){ state.phLS=+v; state._gotPh=true; } else { state.phDFT=+v; } }],
+    [/TVE\s*:\s*([\d.]+) %/,               v=>{ state.tve=+v }],
+    [/THD\s*:\s*([\d.]+) %/,               v=>{ state.thd=+v }],
+    [/DC Offset\s*:\s*([-\d.]+)/,          v=>{ state.dcOff=+v }],
+    [/RMS \(sensor\)\s*:\s*([\d.]+)/,      v=>{ state.rms=+v }],
+    [/UTC\s*:\s*(\d{2}:\d{2}:\d{2})/,     v=>{ state.gpsUtc=v }],
+    [/GPS Lock\s*:\s*(LOCKED|NO FIX)/,     v=>{ state.gpsLock=(v==='LOCKED') }],
+    [/PPS Sync\s*:\s*(YES|NO)/,            v=>{ state.gpsPPS=(v==='YES') }],
+    [/Abs Phase \(LS\)\s*:\s*([-\d.]+)/,   v=>{ state.absPhLS=+v }],
+    [/Abs Phase \(DFT\)\s*:\s*([-\d.]+)/,  v=>{ state.absPhaseDFT=+v }],
+  ];
+  for(const [re, fn] of pairs){
+    const m = line.match(re); if(m) fn(m[1]);
+  }
+
+  // 結果ブロック終了
+  if(line.includes('========') && line.indexOf('Result')>-1){
+    state._gotLS=false; state._gotPh=false;
+  }
+  if(line.startsWith('===') && waveAC.length > 0){
+    commitMeasurement();
+  }
+}
+
+let _commitTimer=null;
+function commitMeasurement(){
+  clearTimeout(_commitTimer);
+  _commitTimer = setTimeout(_doCommit, 50);
+}
+
+function _doCommit(){
+  const ts = nowStr();
+  const isoTs = nowISO();
+
+  // KPI 更新
+  setKPI('vFreq',  state.freq.toFixed(3), 'kFreq',
+    f=>{ if(f>49&&f<51||f>59&&f<61) return 'ok'; if(f>1) return 'warn'; return ''; });
+  setKPI('vAmpLS',  (state.ampLS/Math.SQRT2).toFixed(1), 'kAmpLS');
+  setKPI('vAmpDFT', (state.ampDFT/Math.SQRT2).toFixed(1), 'kAmpDFT');
+  setKPI('vPhase',  state.phLS.toFixed(2), 'kPhase');
+  // 絶対位相
+  const absVal = state.absPhLS !== null ? state.absPhLS.toFixed(3) : '--';
+  document.getElementById('vAbsPhase').textContent = absVal;
+  document.getElementById('kAbsPhase').className = 'kpi' + (state.gpsPPS ? ' ok' : '');
+  setKPI('vTVE',    state.tve.toFixed(3), 'kTVE',
+    v=>{ if(v<=1) return 'ok'; return 'ng'; });
+  setKPI('vROCOF',  state.rocof.toFixed(3), 'kROCOF',
+    v=>{ if(Math.abs(v)>1) return 'warn'; return ''; });
+  // GPS KPI
+  document.getElementById('vGPS').textContent = state.gpsUtc;
+  const gpsStatusEl = document.getElementById('vGPSStatus');
+  if(state.gpsPPS && state.gpsLock){
+    document.getElementById('kGPS').className='kpi ok';
+    gpsStatusEl.style.color='#3fb950'; gpsStatusEl.textContent='LOCKED・PPS同期';
+  } else if(state.gpsLock){
+    document.getElementById('kGPS').className='kpi warn';
+    gpsStatusEl.style.color='#d29922'; gpsStatusEl.textContent='LOCKED・PPS待機';
+  } else {
+    document.getElementById('kGPS').className='kpi';
+    gpsStatusEl.style.color='#484f58'; gpsStatusEl.textContent='NO FIX';
+  }
+
+  // 波形チャート更新
+  chartWave.data.datasets[0].data = [...waveAC];
+  chartWave.data.datasets[1].data = [...waveLS];
+  chartWave.data.datasets[2].data = [...waveDFT];
+  chartWave.update('none');
+
+  // トレンド更新
+  pushTrend(freqLabels, freqData, ts, state.freq, MAX_TREND, chartFreq);
+  pushTrend(tveLabels,  tveData,  ts, state.tve,  MAX_TREND, chartTVE);
+  pushTrend2(rocofLabels, thdData, rocofData, ts, state.thd, state.rocof, MAX_TREND, chartROCOF);
+
+  // フェーザー図
+  drawPhasor(state.ampLS, state.phLS, state.ampDFT, state.phDFT);
+
+  // 比較テーブル
+  const tbody = document.getElementById('tblBody');
+  const addRow = (algo, amp, ph, tag) => {
+    const rms = (amp/Math.SQRT2).toFixed(1);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${ts}</td><td><span class="tag ${tag}">${algo}</span></td>
+      <td>${amp.toFixed(2)}</td><td>${rms}</td><td>${ph.toFixed(2)}</td>
+      <td>${state.freq.toFixed(3)}</td><td>${state.tve.toFixed(3)}</td><td>${state.thd.toFixed(2)}</td>`;
+    tbody.prepend(tr);
+    if(tbody.rows.length > 100) tbody.deleteRow(tbody.rows.length-1);
+  };
+  addRow('DFT', state.ampDFT, state.phDFT, 'dft');
+  addRow('LS',  state.ampLS,  state.phLS,  'ls');
+
+  // CSV 蓄積
+  const gpsLockStr = state.gpsLock?'1':'0';
+  const absLS  = state.absPhLS      !== null ? state.absPhLS.toFixed(4)      : '';
+  const absDFT = state.absPhaseDFT  !== null ? state.absPhaseDFT.toFixed(4)  : '';
+  csvRows.push([isoTs,state.gpsUtc,gpsLockStr,'LS', state.ampLS.toFixed(4),(state.ampLS/Math.SQRT2).toFixed(4),
+    state.phLS.toFixed(4),absLS,state.freq.toFixed(4),state.tve.toFixed(4),state.thd.toFixed(4)]);
+  csvRows.push([isoTs,state.gpsUtc,gpsLockStr,'DFT',state.ampDFT.toFixed(4),(state.ampDFT/Math.SQRT2).toFixed(4),
+    state.phDFT.toFixed(4),absDFT,state.freq.toFixed(4),state.tve.toFixed(4),state.thd.toFixed(4)]);
+
+  // ログ
+  const warn = state.tve > 1 ? 'warn' : '';
+  const absStr = state.absPhLS !== null ? `  AbsPhase=${state.absPhLS.toFixed(2)}°` : '';
+  const gpsStr = state.gpsLock ? ` [GPS ${state.gpsUtc}]` : ' [NO FIX]';
+  addLog(ts, `Freq=${state.freq.toFixed(3)}Hz  LS=${(state.ampLS/Math.SQRT2).toFixed(1)}V ${state.phLS.toFixed(1)}°${absStr}  TVE=${state.tve.toFixed(3)}%${gpsStr}`, warn);
+
+  // 状態リセット
+  state._gotLS=false; state._gotPh=false;
+}
+
+function setKPI(valId, val, cardId, colorFn=null){
+  document.getElementById(valId).textContent = val;
+  if(colorFn && cardId){
+    const cls = colorFn(parseFloat(val));
+    const el = document.getElementById(cardId);
+    el.className = 'kpi ' + (cls||'');
+  }
+}
+
+function pushTrend(labels, data, ts, val, max, chart){
+  labels.push(ts); data.push(val);
+  if(labels.length > max){ labels.shift(); data.shift(); }
+  chart.update('none');
+}
+
+function pushTrend2(labels, d1, d2, ts, v1, v2, max, chart){
+  labels.push(ts); d1.push(v1); d2.push(v2);
+  if(labels.length > max){ labels.shift(); d1.shift(); d2.shift(); }
+  chart.update('none');
+}
+
+function addLog(ts, msg, cls=''){
+  const log = document.getElementById('log');
+  const div = document.createElement('div');
+  div.className = 'entry ' + cls;
+  div.innerHTML = `<span class="t">[${ts}]</span><span class="m">${msg}</span>`;
+  log.prepend(div);
+  if(log.children.length > 200) log.lastChild.remove();
+}
+
+// ════════════════════════════════════════════════
+//  デバイス識別テーブル (VID:PID → 名前)
+// ════════════════════════════════════════════════
+const KNOWN_DEVICES = {
+  '0483:374b': {name:'STM32 Nucleo',     icon:'🔵', note:'ST-Link v2.1'},
+  '0483:374e': {name:'STM32 ST-Link',    icon:'🔵', note:'ST-Link v3'},
+  '0483:5740': {name:'STM32 CDC',        icon:'🔵', note:'Virtual COM'},
+  '0483:df11': {name:'STM32 DFU',        icon:'🔵', note:'Bootloader'},
+  '1a86:7523': {name:'CH340',            icon:'🟡', note:'USB-Serial'},
+  '1a86:55d4': {name:'CH9102',           icon:'🟡', note:'USB-Serial'},
+  '10c4:ea60': {name:'CP2102',           icon:'🟢', note:'Silicon Labs'},
+  '10c4:ea70': {name:'CP2105',           icon:'🟢', note:'Silicon Labs'},
+  '0403:6001': {name:'FT232',            icon:'🟣', note:'FTDI'},
+  '0403:6010': {name:'FT2232',           icon:'🟣', note:'FTDI Dual'},
+  '0403:6014': {name:'FT232H',           icon:'🟣', note:'FTDI Hi-Speed'},
+  '2341:0043': {name:'Arduino Uno',      icon:'⚪', note:'ATmega328'},
+  '2341:0010': {name:'Arduino Mega',     icon:'⚪', note:'ATmega2560'},
+  '2e8a:000a': {name:'Raspberry Pi Pico',icon:'⚪', note:'RP2040 CDC'},
+};
+
+function getDeviceName(info){
+  if(!info.usbVendorId) return {name:'不明なデバイス', icon:'⚫', note:'VID/PID なし'};
+  const vid = info.usbVendorId.toString(16).padStart(4,'0');
+  const pid = info.usbProductId.toString(16).padStart(4,'0');
+  const key = `${vid}:${pid}`;
+  const known = KNOWN_DEVICES[key];
+  if(known) return {...known, key};
+  return {name:'不明なデバイス', icon:'⚫', note:`VID:0x${vid.toUpperCase()} PID:0x${pid.toUpperCase()}`, key};
+}
+
+// ════════════════════════════════════════════════
+//  WebSerial — ポートリスト管理
+// ════════════════════════════════════════════════
+let port=null, reader=null;
+const portMap = new Map(); // port object → {info, connected}
+
+async function refreshPortList(){
+  if(!('serial' in navigator)) return;
+  const ports = await navigator.serial.getPorts();
+  // 新規ポートを追加
+  for(const p of ports){
+    if(!portMap.has(p)){
+      const info = p.getInfo();
+      portMap.set(p, {info, connected:false});
+    }
+  }
+  // 消えたポートを削除
+  for(const [p] of portMap){
+    if(!ports.includes(p) && p !== port) portMap.delete(p);
+  }
+  renderPortList();
+}
+
+function renderPortList(){
+  const list = document.getElementById('devList');
+  const nodev = document.getElementById('noDevice');
+  list.innerHTML = '';
+
+  if(portMap.size === 0){
+    list.appendChild(nodev || (() => {
+      const s = document.createElement('span');
+      s.id='noDevice'; s.className=''; s.style='font-size:11px;color:#484f58;padding:4px 0';
+      s.textContent='デバイスなし — 「＋ デバイスを追加」を押してください';
+      return s;
+    })());
+    return;
+  }
+
+  for(const [p, meta] of portMap){
+    const isConn = (p === port);
+    const dev = getDeviceName(meta.info);
+    const item = document.createElement('div');
+    item.className = 'dev-item' + (isConn ? ' connected' : '');
+    item.innerHTML = `
+      <span class="dev-dot"></span>
+      <span style="font-size:14px">${dev.icon}</span>
+      <span>
+        <div class="dev-name">${dev.name}</div>
+        <div class="dev-sub">${dev.note}${dev.key ? ' · '+dev.key.toUpperCase() : ''}</div>
+      </span>
+      <button class="dev-btn">${isConn ? '切断' : '接続'}</button>`;
+    item.querySelector('.dev-btn').onclick = async (e)=>{
+      e.stopPropagation();
+      if(isConn){ await doDisconnect(); }
+      else       { await doConnect(p, dev.name); }
+    };
+    list.appendChild(item);
+  }
+}
+
+// ── 接続 ──
+async function doConnect(p, devName){
+  if(port) await doDisconnect();
+  const baud = +document.getElementById('baudSel').value;
+  try{
+    await p.open({baudRate:baud});
+    port = p;
+    addLog(nowStr(), `接続: ${devName} @ ${baud} bps`);
+    renderPortList();
+    readLoop();
+  }catch(e){
+    addLog(nowStr(), '接続エラー: '+e, 'err');
+  }
+}
+
+// ── 切断 ──
+async function doDisconnect(){
+  try{ reader && await reader.cancel(); }catch(_){}
+  try{ port && await port.close(); }catch(_){}
+  port = null;
+  addLog(nowStr(), '切断');
+  renderPortList();
+}
+
+// ── スキャン (ブラウザダイアログ) ──
+document.getElementById('btnScan').onclick = async ()=>{
+  if(!('serial' in navigator)){
+    alert('WebSerial 非対応ブラウザです。Chrome / Edge をお使いください。');
+    return;
+  }
+  try{
+    const p = await navigator.serial.requestPort();
+    if(!portMap.has(p)){
+      portMap.set(p, {info: p.getInfo(), connected:false});
+    }
+    renderPortList();
+  }catch(e){
+    if(!e.message.includes('No port selected')) addLog(nowStr(),'スキャンキャンセル','');
+  }
+};
+
+// ── USB 抜き差しイベント ──
+if('serial' in navigator){
+  navigator.serial.addEventListener('connect', async e=>{
+    const p = e.target;
+    portMap.set(p, {info: p.getInfo(), connected:false});
+    addLog(nowStr(), `デバイス接続検出: ${getDeviceName(p.getInfo()).name}`);
+    renderPortList();
+  });
+  navigator.serial.addEventListener('disconnect', async e=>{
+    const p = e.target;
+    if(p === port){ await doDisconnect(); }
+    portMap.delete(p);
+    addLog(nowStr(), `デバイス切断検出`, 'warn');
+    renderPortList();
+  });
+  // 起動時に許可済みポートを取得
+  refreshPortList();
+}
+
+async function readLoop(){
+  const decoder = new TextDecoderStream();
+  port.readable.pipeTo(decoder.writable);
+  reader = decoder.readable.getReader();
+  try{
+    while(true){
+      const {value, done} = await reader.read();
+      if(done) break;
+      lineBuffer += value;
+      const lines = lineBuffer.split('\n');
+      lineBuffer = lines.pop();
+      for(const l of lines) parseLine(l);
+    }
+  }catch(e){ addLog(nowStr(),'受信エラー: '+e,'err'); }
+  finally{ reader=null; }
+}
+
+// ════════════════════════════════════════════════
+//  クリア / CSV
+// ════════════════════════════════════════════════
+document.getElementById('btnClear').onclick = ()=>{
+  waveAC.length=waveLS.length=waveDFT.length=0;
+  freqLabels.length=freqData.length=0;
+  tveLabels.length=tveData.length=0;
+  rocofLabels.length=thdData.length=rocofData.length=0;
+  [chartWave,chartFreq,chartTVE,chartROCOF].forEach(c=>c.update('none'));
+  document.getElementById('tblBody').innerHTML='';
+  document.getElementById('log').innerHTML='';
+  csvRows.splice(1);
+  drawPhasor(0,0,0,0);
+};
+
+document.getElementById('btnCsv').onclick = ()=>{
+  const blob = new Blob([csvRows.map(r=>r.join(',')).join('\r\n')],{type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `pmu_${new Date().toISOString().replace(/[:.]/g,'-')}.csv`;
+  a.click();
+};
+
+// ════════════════════════════════════════════════
+//  デモデータ (シリアル未接続時のプレビュー用)
+// ════════════════════════════════════════════════
+let demoMode = true;
+let demoT = 0;
+function demoTick(){
+  if(port){ demoMode=false; return; }  // port は WebSerial セクションで宣言
+  if(!demoMode) return;
+  const Fs=2000, N=200, f0=50, t0=demoT;
+  const noise=()=>(Math.random()-0.5)*0.002;
+  for(let i=0;i<N;i++){
+    const t=(t0+i)/Fs;
+    const ac = 0.004*Math.sin(2*Math.PI*f0*t)+noise();
+    const ls = 0.004*Math.sin(2*Math.PI*f0*t);
+    const dft= 0.004*Math.sin(2*Math.PI*f0*t+0.01);
+    waveAC.push(ac); waveLS.push(ls); waveDFT.push(dft);
+    if(waveAC.length>N){ waveAC.shift(); waveLS.shift(); waveDFT.shift(); }
+  }
+  demoT+=N;
+  state.freq   = 50 + (Math.random()-0.5)*0.05;
+  state.ampLS  = 0.004 * 500;  // 2V pk → 500ratio → センサ値
+  state.ampDFT = state.ampLS * (1+(Math.random()-0.5)*0.005);
+  state.phLS   = -5 + (Math.random()-0.5)*0.1;
+  state.phDFT  = state.phLS + (Math.random()-0.5)*0.3;
+  state.tve    = Math.abs(Math.random()*0.5);
+  state.thd    = Math.random()*1.5;
+  state.rocof  = (Math.random()-0.5)*0.02;
+  _doCommit();
+}
+setInterval(demoTick, 1000);
+</script>
+</body>
+</html>
