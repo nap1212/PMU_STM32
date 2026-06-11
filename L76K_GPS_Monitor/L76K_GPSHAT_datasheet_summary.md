@@ -153,18 +153,20 @@ Raspberry Pi のシリアルデバイス: `/dev/serial0` または `/dev/ttyAMA0
 
 ---
 
-## 11. Arduino 接続（SoftwareSerial 使用時）
+## 11. Arduino Mega 接続（Hardware Serial1 使用）
 
 L76K GPS HAT の電源・信号ピンは **Raspberry Pi 40pin GPIO ヘッダの番号** で呼ばれます。  
 「VCC」という独立したピン名はありません。
 
-| Arduino ピン | L76K GPS HAT (40pin番号) | ピン名 | 備考 |
+HAT は **5V で動作**します。Pin 1（3.3V）は RPi の 3.3V 出力ピンであり電源入力ではないため、**接続不要**です。
+
+| Arduino Mega | L76K GPS HAT (40pin番号) | ピン名 | 備考 |
 |:---:|:---:|:---:|:---|
-| 3.3V | Pin 1 | 3.3V | **5V 不可・必ず 3.3V へ** |
+| **5V** | Pin 2 | 5V | HAT の電源入力（内部で 3.3V に降圧） |
 | GND | Pin 6 | GND | |
-| D10（SoftSerial RX）| Pin 8 | TXD | GPS → Arduino |
-| D11（SoftSerial TX）| Pin 10 | RXD | Arduino → GPS（5V機はレベル変換必須） |
-| D2（INT0）| Pin 7 | PPS | 1秒パルス・割り込み使用可 |
+| Pin19（RX1）| Pin 8 | TXD | GPS → Mega（3.3V 信号） |
+| Pin18（TX1）| Pin 10 | RXD | Mega → GPS（レベル変換必須: 5V→3.3V） |
+| Pin2（INT0）| Pin 7 | PPS | 1秒パルス・割り込み使用可 |
 
 ---
 

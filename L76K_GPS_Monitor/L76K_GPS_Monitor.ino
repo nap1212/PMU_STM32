@@ -17,6 +17,10 @@
  *   3. 電源が 3.3V に接続されているか (5V 不可)
  */
 
+#if !defined(ARDUINO_AVR_MEGA2560) && !defined(ARDUINO_AVR_MEGA)
+  #error "このスケッチは Arduino Mega 2560 専用です。ボードを確認してください。"
+#endif
+
 #include <TinyGPSPlus.h>
 
 // Hardware Serial1 を使用 (TX=18, RX=19)
