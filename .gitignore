@@ -19,3 +19,15 @@ package-lock.json
 package.json
 capture_demo.js
 screenshots/
+
+# エディタのローカル履歴（入れ子gitリポジトリのため追加不可・約16MB）
+.history/
+
+# KiCad 自動生成
+*-backups/
+*.kicad_prl
+fp-info-cache
+*.lck
+
+# Office 一時ファイル
+~$*
